@@ -1,0 +1,55 @@
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: "${CLUSTER_NAME}-md-dh-dynamic"
+spec:
+  clusterName: "${CLUSTER_NAME}"
+  replicas: 1
+  selector:
+    matchLabels:
+  template:
+    spec:
+      clusterName: "${CLUSTER_NAME}"
+      version: "${KUBERNETES_VERSION}"
+      bootstrap:
+        configRef:
+          name: "${CLUSTER_NAME}-md-dh-dynamic"
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+      infrastructureRef:
+        name: "${CLUSTER_NAME}-md-dh-dynamic"
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: AWSMachineTemplate
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: AWSMachineTemplate
+metadata:
+  name: "${CLUSTER_NAME}-md-dh-dynamic"
+spec:
+  template:
+    spec:
+      instanceType: "${AWS_NODE_MACHINE_TYPE}"
+      iamInstanceProfile: "nodes.cluster-api-provider-aws.sigs.k8s.io"
+      sshKeyName: "${AWS_SSH_KEY_NAME}"
+      # Dynamic dedicated host allocation configuration
+      dynamicHostAllocation:
+        instanceFamily: "${DYNAMIC_HOST_INSTANCE_FAMILY}"
+        quantity: 1
+        autoRelease: true
+        tags:
+          test: "dynamic-allocation"
+          cluster: "${CLUSTER_NAME}"
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: "${CLUSTER_NAME}-md-dh-dynamic"
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          name: '{{ ds.meta_data.local_hostname }}'
+          kubeletExtraArgs:
+            cloud-provider: external
