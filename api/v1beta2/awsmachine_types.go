@@ -245,6 +245,45 @@ type AWSMachineSpec struct {
 	// +optional
 	// +kubebuilder:validation:Enum:=default;host
 	HostAffinity *string `json:"hostAffinity,omitempty"`
+
+	// DynamicHostAllocation enables automatic allocation of dedicated hosts.
+	// This field is mutually exclusive with HostID.
+	// +optional
+	DynamicHostAllocation *DynamicHostAllocationSpec `json:"dynamicHostAllocation,omitempty"`
+}
+
+// DynamicHostAllocationSpec defines the configuration for dynamic dedicated host allocation.
+type DynamicHostAllocationSpec struct {
+	// InstanceFamily specifies the EC2 instance family (e.g., "m5", "c5", "r5").
+	// +kubebuilder:validation:Required
+	InstanceFamily string `json:"instanceFamily"`
+
+	// AvailabilityZone specifies the target availability zone for allocation.
+	// If not specified, uses the same AZ as the instance.
+	// +optional
+	AvailabilityZone *string `json:"availabilityZone,omitempty"`
+
+	// InstanceType specifies the specific instance type for the dedicated host.
+	// If not specified, derives from InstanceFamily.
+	// +optional
+	InstanceType *string `json:"instanceType,omitempty"`
+
+	// Quantity specifies the number of dedicated hosts to allocate.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	// +kubebuilder:default=1
+	// +optional
+	Quantity *int32 `json:"quantity,omitempty"`
+
+	// AutoRelease determines whether to automatically release the dedicated host
+	// when the machine is deleted.
+	// +kubebuilder:default=true
+	// +optional
+	AutoRelease *bool `json:"autoRelease,omitempty"`
+
+	// Tags to apply to the allocated dedicated host.
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 // CloudInit defines options related to the bootstrapping systems where
@@ -424,6 +463,11 @@ type AWSMachineStatus struct {
 	// Conditions defines current service state of the AWSMachine.
 	// +optional
 	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+
+	// AllocatedHostID tracks the dynamically allocated dedicated host ID.
+	// This field is populated when DynamicHostAllocation is used.
+	// +optional
+	AllocatedHostID *string `json:"allocatedHostID,omitempty"`
 }
 
 // +kubebuilder:object:root=true

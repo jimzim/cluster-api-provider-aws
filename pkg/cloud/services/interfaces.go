@@ -91,6 +91,12 @@ type EC2Interface interface {
 
 	// ReleaseElasticIP reconciles the elastic IP from a custom Public IPv4 Pool.
 	ReleaseElasticIP(instanceID string) error
+
+	// Dedicated Host management
+	AllocateDedicatedHost(ctx context.Context, spec *infrav1.DynamicHostAllocationSpec, availabilityZone string) (string, error)
+	ReleaseDedicatedHost(ctx context.Context, hostID string) error
+	DescribeDedicatedHost(ctx context.Context, hostID string) (*infrav1.DedicatedHostInfo, error)
+	ListDedicatedHosts(ctx context.Context, filters map[string]string) ([]*infrav1.DedicatedHostInfo, error)
 }
 
 // MachinePoolReconcileInterface encapsulates high-level reconciliation functions regarding EC2 reconciliation. It is

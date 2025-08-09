@@ -285,6 +285,38 @@ type Instance struct {
 	// HostID specifies the dedicated host on which the instance should be started.
 	// +optional
 	HostID *string `json:"hostID,omitempty"`
+
+	// DynamicHostAllocation enables automatic allocation of dedicated hosts.
+	// This field is mutually exclusive with HostID.
+	// +optional
+	DynamicHostAllocation *DynamicHostAllocationSpec `json:"dynamicHostAllocation,omitempty"`
+}
+
+// DedicatedHostInfo contains information about a dedicated host.
+type DedicatedHostInfo struct {
+	// HostID is the ID of the dedicated host.
+	HostID string `json:"hostID"`
+
+	// InstanceFamily is the instance family supported by the host.
+	InstanceFamily string `json:"instanceFamily"`
+
+	// InstanceType is the instance type supported by the host.
+	InstanceType string `json:"instanceType"`
+
+	// AvailabilityZone is the AZ where the host is located.
+	AvailabilityZone string `json:"availabilityZone"`
+
+	// State is the current state of the dedicated host.
+	State string `json:"state"`
+
+	// TotalCapacity is the total number of instances that can be launched on the host.
+	TotalCapacity int32 `json:"totalCapacity"`
+
+	// AvailableCapacity is the number of instances that can still be launched on the host.
+	AvailableCapacity int32 `json:"availableCapacity"`
+
+	// Tags associated with the dedicated host.
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 // MarketType describes the market type of an Instance

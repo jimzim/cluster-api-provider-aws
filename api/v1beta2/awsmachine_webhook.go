@@ -460,14 +460,164 @@ func (r *AWSMachine) validateAdditionalSecurityGroups() field.ErrorList {
 func (r *AWSMachine) validateHostAffinity() field.ErrorList {
 	var allErrs field.ErrorList
 
+	// Validate static host allocation
 	if r.Spec.HostAffinity != nil {
 		if r.Spec.HostID == nil || len(*r.Spec.HostID) == 0 {
 			allErrs = append(allErrs, field.Required(field.NewPath("spec.hostID"), "hostID must be set when hostAffinity is configured"))
 		}
 	}
+
+	// Validate dynamic host allocation
+	if r.Spec.DynamicHostAllocation != nil {
+		// Mutual exclusivity check
+		if r.Spec.HostID != nil {
+			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec.hostID"), "cannot specify both hostID and dynamicHostAllocation"))
+		}
+		if r.Spec.HostAffinity != nil {
+			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec.hostAffinity"), "cannot specify both hostAffinity and dynamicHostAllocation"))
+		}
+
+		// Validate dynamic allocation spec
+		allErrs = append(allErrs, r.validateDynamicHostAllocation()...)
+	}
+
+	return allErrs
+}
+
+func (r *AWSMachine) validateDynamicHostAllocation() field.ErrorList {
+	var allErrs field.ErrorList
+	spec := r.Spec.DynamicHostAllocation
+
+	// Validate instance family is required
+	if spec.InstanceFamily == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec.dynamicHostAllocation.instanceFamily"), "instanceFamily is required"))
+	} else {
+		// Validate instance family format
+		if !isValidInstanceFamily(spec.InstanceFamily) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec.dynamicHostAllocation.instanceFamily"), spec.InstanceFamily, "invalid instance family format"))
+		}
+	}
+
+	// Validate quantity if specified
+	if spec.Quantity != nil {
+		if *spec.Quantity < 1 || *spec.Quantity > 10 {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec.dynamicHostAllocation.quantity"), *spec.Quantity, "quantity must be between 1 and 10"))
+		}
+	}
+
+	// Validate instance type format if specified
+	if spec.InstanceType != nil && *spec.InstanceType != "" {
+		if !isValidInstanceType(*spec.InstanceType) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec.dynamicHostAllocation.instanceType"), *spec.InstanceType, "invalid instance type format"))
+		}
+
+		// Check consistency between instance family and instance type
+		expectedFamily := extractInstanceFamily(*spec.InstanceType)
+		if expectedFamily != spec.InstanceFamily {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec.dynamicHostAllocation.instanceType"), *spec.InstanceType,
+				fmt.Sprintf("instance type %s does not match specified instance family %s", *spec.InstanceType, spec.InstanceFamily)))
+		}
+	}
+
+	// Validate availability zone format if specified
+	if spec.AvailabilityZone != nil && *spec.AvailabilityZone != "" {
+		if !isValidAvailabilityZone(*spec.AvailabilityZone) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec.dynamicHostAllocation.availabilityZone"), *spec.AvailabilityZone, "invalid availability zone format"))
+		}
+	}
+
 	return allErrs
 }
 
 func (r *AWSMachine) validateSSHKeyName() field.ErrorList {
 	return validateSSHKeyName(r.Spec.SSHKeyName)
+}
+
+// isValidInstanceFamily validates the format of an EC2 instance family.
+func isValidInstanceFamily(family string) bool {
+	// Instance families typically follow patterns like: m5, c5, r5, t3, etc.
+	// Allow alphanumeric characters, must start with a letter
+	if len(family) < 2 || len(family) > 10 {
+		return false
+	}
+
+	for i, char := range family {
+		if i == 0 {
+			// First character must be a letter
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
+				return false
+			}
+		} else {
+			// Subsequent characters can be letters or numbers
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isValidInstanceType validates the format of an EC2 instance type.
+func isValidInstanceType(instanceType string) bool {
+	// Instance types follow the pattern: family.size (e.g., m5.large, c5.xlarge)
+	parts := strings.Split(instanceType, ".")
+	if len(parts) != 2 {
+		return false
+	}
+
+	family, size := parts[0], parts[1]
+
+	// Validate family part
+	if !isValidInstanceFamily(family) {
+		return false
+	}
+
+	// Validate size part - common sizes include: nano, micro, small, medium, large, xlarge, 2xlarge, etc.
+	validSizes := map[string]bool{
+		"nano": true, "micro": true, "small": true, "medium": true, "large": true,
+		"xlarge": true, "2xlarge": true, "3xlarge": true, "4xlarge": true, "6xlarge": true,
+		"8xlarge": true, "9xlarge": true, "10xlarge": true, "12xlarge": true, "16xlarge": true,
+		"18xlarge": true, "24xlarge": true, "32xlarge": true, "48xlarge": true, "56xlarge": true,
+		"112xlarge": true, "224xlarge": true, "metal": true,
+	}
+
+	return validSizes[size]
+}
+
+// isValidAvailabilityZone validates the format of an AWS availability zone.
+func isValidAvailabilityZone(az string) bool {
+	// AZ format: region + zone letter (e.g., us-west-2a, eu-central-1b)
+	if len(az) < 4 {
+		return false
+	}
+
+	// Should end with a single letter
+	lastChar := az[len(az)-1]
+	if !((lastChar >= 'a' && lastChar <= 'z') || (lastChar >= 'A' && lastChar <= 'Z')) {
+		return false
+	}
+
+	// The rest should be a valid region format (contains dashes and alphanumeric)
+	region := az[:len(az)-1]
+	if len(region) < 3 {
+		return false
+	}
+
+	// Basic validation for region format
+	for _, char := range region {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-') {
+			return false
+		}
+	}
+
+	return true
+}
+
+// extractInstanceFamily extracts the instance family from an instance type.
+func extractInstanceFamily(instanceType string) string {
+	parts := strings.Split(instanceType, ".")
+	if len(parts) < 2 {
+		return instanceType
+	}
+	return parts[0]
 }
